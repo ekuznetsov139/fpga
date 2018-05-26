@@ -98,7 +98,29 @@ endfunction
 		)));
 	reg [31:0] I;
 
-	
+	/*
+		a' = rot(a,5)+f+g
+		b' = a
+		c' = rot(b)
+		d' = c
+		e' = d
+		f' = fun(a,b,c)
+		g' = h+x1[n]
+		h' = c+K1
+		--
+<clock 0>		
+		a' = rot(a,5)+f+g
+		t0 = fun(a,b,c) + h + x1[n]
+<clock 1>
+		a'' = rot(a',5)+ t0
+		b'' = a'
+		c'' = rot(a, 2)
+		d'' = rot(b, 2)
+		e'' = c
+		f'' = fun(a', a, rot(b,2))
+		g'' = C+K1+x1[n+1]
+		h'' = rot(b,2)+K1
+	*/
 	always @ (posedge clk)	
 		begin
 			for(I=0; I<16; I=I+1)
@@ -130,6 +152,357 @@ endfunction
 	assign outx = t0;
 endmodule
 
+//
+	//
+	//
+
+module RoundN_5x5_2(clk, va, x, outa, outx);
+	input clk;
+	input [255:0] va;
+	input [511:0] x;
+	output wire [255:0] outa;
+	output wire [511:0] outx;
+	parameter n=0;
+	parameter m1 = (n+1)&15;
+	parameter m2 = (n+2)&15;
+	parameter m3 = (n+3)&15;
+	parameter m4 = (n+4)&15;
+	parameter K1=32'h5A827999;
+	parameter K2=32'h6ED9EBA1;	
+	parameter K3=32'h8F1BBCDC;	
+	parameter K4=32'hCA62C1D6;	
+	reg [255:0] t1;
+	
+	//(* ramstyle = "logic" *) 
+	
+	reg [511:0] t0, xt1, xt2, xt3;
+	
+	(* keep *) wire[31:0] x1, x1c, x3, x3c;
+	wire[31:0] x2, x4;
+function [31:0] getK;
+	input [31:0] n;
+	begin
+		getK=n<19?K1:(n<39?K2:(n<59?K3:K4));
+	end
+endfunction
+
+function [31:0] FUN;
+	input [31:0] a, br, c, n;
+	begin
+		if(n<19)
+			FUN=(c^(a&(br^c)));
+		else if(n<39)
+			FUN=a^br^c;
+		else if(n<59)
+			FUN=( a & br ) | ( c & ( a | br ) );
+		else
+			FUN=a^br^c;
+	end
+endfunction
+
+function [31:0] fetch4;
+	input [511:0] x;
+	input [31:0] n;
+	reg [31:0] xx0, xx, x0, x1, x2, x3, x4;
+	begin
+		x0=x[n*32+:32];
+		x1=x[((n+2)&15)*32+:32];
+		x2=x[((n+8)&15)*32+:32];
+		x3=x[((n+13)&15)*32+:32];
+		xx0=(x0^x1^x2^x3);
+		xx=(xx0>>31)|(xx0<<1);
+		fetch4 = xx;
+	end
+endfunction
+
+function [31:0] rot5;
+	input [31:0] x;
+	begin
+	rot5 = (x<<5)|(x>>27);
+	end
+endfunction
+
+function [31:0] rot30;
+	input [31:0] x;
+	begin
+	rot30 = (x<<30)|(x>>2);
+	end
+endfunction
+
+	reg [31:0] I;
+
+	
+	wire [31:0] a0, b0, c0, d0, e0, f0, g0, h0;
+	assign a0=va[31:0];
+	assign b0=va[63:32];
+	assign c0=va[95:64];
+	assign d0=va[127:96];
+	assign e0=va[159:128];
+	assign f0=va[191:160];
+	assign g0=va[223:192];
+	assign h0=va[255:224];
+
+
+	//wire[31:0] ar, br;
+	//assign br = (b0<<30)|(b0>>2);
+	//assign ar = (a0<<30)|(a0>>2);
+
+	reg [31:0] a4, b4, c4, d4, e4, f4, g4, h4;
+	reg[31:0] a1, b1, c1, h1, y10,  a2, b2, c2, y20, y21,  a3, b3, y30, y31, y32;
+
+`define BLENDED_VX_UPDATE
+
+`ifdef BLENDED_VX_UPDATE
+	reg[31:0] x2_, x4_;
+	assign x1 = fetch4(x, m1);
+	assign x1c = fetch4(x, m1);
+	assign x2 = fetch4(x, m2);
+
+	assign x3 = fetch4(xt2, (n+3)&15);
+	assign x3c = fetch4(xt2, (n+3)&15);
+	assign x4 = fetch4(xt2, (n+4)&15);
+
+`else
+	wire[31:0] x2_, x4_;
+	assign x1 = fetch4(x, m1);
+	assign x2_ = fetch4(xt1, m2);
+	assign x3 = fetch4(xt2, (n+3)&15);
+	assign x4_ = fetch4(xt3, (n+4)&15);
+`endif
+
+	reg[31:0] x1_t0, x2_t1;
+	reg[31:0] x3_t2, x4_t3;
+
+	reg[31:0] y22, y33;
+	
+	always @ (posedge clk)	
+		begin
+		x1_t0 <= x1;
+		x2_t1 <= x2_;
+		x3_t2 <= x3;
+`ifdef BLENDED_VX_UPDATE
+		x2_ <= x2;
+		x4_ <= x4;
+			for(I=0; I<16; I=I+1)
+				begin
+					if(I==m1)
+						xt1[I*32+:32]<=x1c;
+					else if(I==m2)
+						xt1[I*32+:32]<=x2;
+					else
+						xt1[I*32+:32]<=x[I*32+:32];
+					if(I==m3)
+						xt3[I*32+:32]<=x3c;
+					else if(I==m4)
+						xt3[I*32+:32]<=x4;
+					else
+						xt3[I*32+:32]<=xt2[I*32+:32];
+				end
+			xt2 <= xt1;
+			t0 <= xt3;
+`else			
+			for(I=0; I<16; I=I+1)
+				begin
+					if(I==m1)
+						xt1[I*32+:32]<=x1;
+					else
+						xt1[I*32+:32]<=x[I*32+:32];
+					if(I==m2)
+						xt2[I*32+:32]<=x2_;
+					else
+						xt2[I*32+:32]<=xt1[I*32+:32];
+					if(I==m3)
+						xt3[I*32+:32]<=x3;
+					else
+						xt3[I*32+:32]<=xt2[I*32+:32];
+					if(I==m4)
+						t0[I*32+:32]<=x4_;
+					else
+						t0[I*32+:32]<=xt3[I*32+:32];
+				end
+`endif	
+/*
+				b <= rot5(a0)+f0+g0;
+				c <= ar;
+				d <= br;
+				e <= c0;
+				g <= FUN(a0,br,c0, n);
+				h <= h0+x1;
+				t1<={
+					d+K4,
+					e+K4+x2,
+					FUN(b,c,d,n+1), 
+					e, d, c, b, 
+					rot5(b)+g+h
+				};
+*/
+/*
+		a1<=a0;
+		b1<=b0;
+		c1<=c0;
+		h1<=h0+x1;
+		y10<=rot5(a0)+f0+g0;
+
+		a2<=a1;
+		b2<=b1;
+		c2<=c1+x2;
+		y20<=y10;
+		y21<=rot5(y10)+FUN(a1,rot30(b1),c1, n) +h1;
+
+		a3<=a2;
+		b3<=rot30(b2)+x3;
+		y30<=y20;
+		y31<=y21;
+		y32<=rot5(y21)+FUN(y20,rot30(a2),rot30(b2),n+1) +c2+getK(n+2);
+
+		a4<=rot5(y32)+FUN(y31,rot30(y30),rot30(a3), n+2) +getK(n+3);
+		b4<=y32;
+		c4<=rot30(y31);
+		d4<=rot30(y30);
+		e4<=rot30(a3);
+		f4<=FUN(y32,rot30(y31),rot30(y30),n+3);
+		g4<=rot30(a3)+getK(n+4)+x4;
+		h4<=rot30(y30)+getK(n+1);
+*/
+
+`define MAX_ADDS_1
+
+`ifdef MAX_ADDS_3
+// 4-term adds: 3
+// 3-term adds: 2
+// 2-term adds: 1
+		a1<=a0;
+		b1<=b0;
+		c1<=c0;
+		h1<=h0;
+		y10<=rot5(a0)+f0+g0; // two sinks
+
+		a2<=rot30(a1);
+		b2<=rot30(b1);
+		c2<=c1;
+		y20<=y10;
+		y21<=rot5(y10)+FUN(a1, rot30(b1), c1, n)+h1+x1_t0; // two sinks
+
+		a3<=a2;
+		b3<=b2;
+		y30<=rot30(y20);
+		y31<=y21;
+		y32<=rot5(y21)+FUN(y20,a2,b2,n+1)+c2+getK(n+1)+x2_t1;
+
+		a4<=rot5(y32)+FUN(y31,y30,a3, n+2)+b3+getK(n+2)+x3_t2;
+		b4<=y32;
+		c4<=rot30(y31);
+		d4<=y30;
+		e4<=a3;
+		f4<=FUN(y32,rot30(y31),y30,n+3);
+		g4<=a3+getK(n+3)+x4_;
+		h4<=y30+getK(n+4);
+`endif
+
+`ifdef MAX_ADDS_2
+// 3-term adds: 7 
+// 2-term adds: 2
+		a1<=a0;
+		b1<=b0;
+		c1<=c0;
+		h1<=h0+FUN(a0, rot30(b0), c0, n)+x1;
+		y10<=rot5(a0)+f0+g0;
+
+		a2<=rot30(a1);
+		b2<=rot30(b1);
+		c2<=c1+getK(n+1)+x2_;
+		y20<=y10;
+		y21<=rot5(y10)+h1;
+
+		a3<=a2;
+		b3<=b2+getK(n+2)+x3;
+		y30<=rot30(y20);
+		y31<=y21;
+		y32<=rot5(y21)+FUN(y20,a2,b2,n+1)+c2;
+
+		a4<=rot5(y32)+FUN(y31,y30,a3, n+2)+b3;
+		b4<=y32;
+		c4<=rot30(y31);
+		d4<=y30;
+		e4<=a3;
+		f4<=FUN(y32,rot30(y31),y30,n+3);
+		g4<=a3+getK(n+3)+x4_;
+		h4<=y30+getK(n+4);
+`endif
+`ifdef MAX_ADDS_1
+// 3-term adds: 4 
+// 2-term adds: 8
+		a1<=a0;
+		b1<=b0;
+		c1<=c0+getK(n+1);
+		h1<=h0+FUN(a0, rot30(b0), c0, n);
+		y10<=rot5(a0)+f0+g0;
+
+		a2<=rot30(a1);
+		b2<=rot30(b1);
+		y22<=rot30(b1)+getK(n+2);
+		c2<=c1+x2_;
+		y20<=y10;
+		y21<=rot5(y10)+h1+x1_t0; 
+
+		a3<=a2;
+		y33<=a2+getK(n+3);
+		b3<=y22+FUN(y21,rot30(y20),a2, n+2);
+		y30<=rot30(y20);
+		y31<=y21;
+		y32<=rot5(y21)+FUN(y20,a2,b2,n+1)+c2;
+
+		a4<=rot5(y32)+b3+x3_t2; 
+		b4<=y32;
+		c4<=rot30(y31);
+		d4<=y30;
+		e4<=a3;
+		f4<=FUN(y32,rot30(y31),y30,n+3);
+		g4<=y33+x4_;
+		h4<=y30+getK(n+4);
+`endif	
+
+`ifdef MAX_ADDS_1_v2
+// 3-term adds: 4 
+// 2-term adds: 8
+		a1<=a0;
+		b1<=rot30(b0);
+		c1<=c0+getK(n+1);
+		h1<=h0+FUN(a0, rot30(b0), c0, n);
+		y10<=rot5(a0)+f0+g0;
+
+		a2<=rot30(a1);
+		//b2<=b1;
+		y22<=b1+getK(n+2);
+		c2<=c1+x2_;
+		y20<=y10;
+		y21<=rot5(y10)+h1+x1_t0; 
+		y23<=FUN(y10,rot30(a1),b1,n+1);
+
+		a3<=a2;
+		y33<=a2+getK(n+3);
+		//b3<=y22+x3;
+		y30<=rot30(y20);
+		y31<=y21;
+		y32<=y23+rot5(y21)+c2;
+		y34<=FUN(y21,rot30(y20),a2, n+2)+y22+x3;
+
+		a4<=rot5(y32)+y34; 
+		b4<=y32;
+		c4<=rot30(y31);
+		d4<=y30;
+		e4<=a3;
+		f4<=FUN(y32,rot30(y31),y30,n+3);
+		g4<=y33+x4_;
+		h4<=y30+getK(n+4);
+`endif		
+		end
+	assign outa = {h4, g4, f4, e4, d4, c4, b4, a4};
+	assign outx = t0;
+endmodule
+
+
+
 module SHA1_5x5(clk, ctx, data, out_ctx);
 	input clk;
 	input [159:0] ctx, data;
@@ -146,8 +519,13 @@ module SHA1_5x5(clk, ctx, data, out_ctx);
 	Round1 r0(clk, va0, x0, va[1], x[1], sum1, sum2);
 generate
 genvar gi;
-  for (gi=1; gi<n; gi=gi+1) begin : VR1
+  for (gi=1; gi<20; gi=gi+1) begin : VR1
     RoundN_5x5 #(gi) r(clk, va[gi], x[gi], va[gi+1], x[gi+1]);
+  end
+  for (gi=20; gi<80; gi=gi+4) begin : VR2
+    RoundN_5x5_2 #(gi) r(clk, va[gi], x[gi], va[gi+4], x[gi+4]);
+//  for (gi=60; gi<80; gi=gi+1) begin : VR2
+//    RoundN_5x5 #(gi) r(clk, va[gi], x[gi], va[gi+1], x[gi+1]);
   end
 endgenerate
 always @ (posedge clk)
@@ -174,6 +552,43 @@ always @ (posedge clk)
 endmodule 
 
 
+module SHA1_5x5_bare(clk, ctx, data, out_ctx);
+	input clk;
+	input [159:0] ctx, data;
+	output wire[159:0] out_ctx;
+	reg[511:0] x0;
+	reg[159:0] va0;
+	//parameter n=80;
+	wire[511:0] x[35:1];
+	wire[255:0] va[35:1];
+	reg[159:0] out_sum;
+	reg[31:0] sum1, sum2;
+	reg [7:0] I;
+	Round1 r0(clk, va0, x0, va[1], x[1], sum1, sum2);
+generate
+genvar gi;
+  for (gi=1; gi<20; gi=gi+1) begin : VR1
+    RoundN_5x5 #(gi) r(clk, va[gi], x[gi], va[gi+1], x[gi+1]);
+  end
+  for (gi=20; gi<35; gi=gi+1) begin : VR2
+    RoundN_5x5_2 #(20 + (gi-20)*4) r(clk, va[gi], x[gi], va[gi+1], x[gi+1]);
+//  for (gi=60; gi<80; gi=gi+1) begin : VR2
+//    RoundN_5x5 #(gi) r(clk, va[gi], x[gi], va[gi+1], x[gi+1]);
+  end
+endgenerate
+always @ (posedge clk)
+	begin
+		va0<=ctx;
+		x0[159:0]<=data;
+		x0[191:160]<=32'h80000000;
+		x0[479:192]<=0;
+		x0[511:480]<=32'h2a0;
+		sum1<=((ctx[31:0]<<5)|(ctx[31:0]>>27))+ctx[159:128];
+		sum2<=data[31:0]+32'h5A827999;
+	end
+	assign out_ctx = va[35];
+endmodule 
+
 
 module pmk_calc_ring_fifo(core_clk, 
 		user_r_read_empty,
@@ -197,11 +612,11 @@ module pmk_calc_ring_fifo(core_clk,
 	output [7:0] out_status;
 	
 	parameter N=100;
+	parameter Niter=10;
+	//parameter Niter=4096;
 	parameter L=82;
 	parameter NL=N-L;
 
-	//parameter Niter=10;
-	parameter Niter=4096;
 	reg[7:0] status=0;
 	reg[31:0] counter;
 	wire[159:0] out_ctx;
@@ -210,12 +625,12 @@ module pmk_calc_ring_fifo(core_clk,
 	
 	reg acc_read_enable_local=0;
 	
-	reg pad_read_enable=0;
-	wire pad_write_enable, acc_write_enable;
+	reg pad_read_enable=0, pad2_read_enable=0;
+	wire pad_write_enable, acc_write_enable,  pad2_write_enable;
 	reg data_read_enable=0, data_write_enable=0, acc_empty;
 	wire acc_read_enable;
-	wire[159:0] pad_in, acc_in;
-	reg[159:0] pad, acc_in_reg, data, acc_out;
+	wire[159:0] pad_in, acc_in, pad2_in;
+	reg[159:0] pad, acc_in_reg, data_bare, data, acc_out, pad_half;
 	wire[159:0] data_sha_input, data_in;
 	
 	reg dumpfifos=0;
@@ -244,7 +659,7 @@ module pmk_calc_ring_fifo(core_clk,
 	accfifo.lpm_widthu = $clog2(N),
 	accfifo.overflow_checking = "OFF",
 	accfifo.underflow_checking = "OFF",
-	accfifo.use_eab = "ON";
+	accfifo.use_eab = "OFF";
 
    scfifo datafifo (
 		    .clock (core_clk),
@@ -254,7 +669,7 @@ module pmk_calc_ring_fifo(core_clk,
 		    .wrreq (data_write_enable),
 		    .empty (),
 		    .full (),
-		    .q (data),
+		    .q (data_bare),
 		    .aclr (),
 		    .almost_empty (),
 		    .almost_full (),
@@ -288,32 +703,107 @@ module pmk_calc_ring_fifo(core_clk,
 		.eccstatus());			 
    defparam
 	padfifo.add_ram_output_register = "OFF",
-	padfifo.lpm_numwords = 2*N,
+	padfifo.lpm_numwords = N+1,
 	padfifo.lpm_showahead = "OFF",
 	padfifo.lpm_type = "scfifo",
 	padfifo.lpm_width = 160,
-	padfifo.lpm_widthu = $clog2(2*N),
+	padfifo.lpm_widthu = $clog2(N+1),
 	padfifo.overflow_checking = "OFF",
 	padfifo.underflow_checking = "OFF",
 	padfifo.use_eab = "ON";
+	
 
-	SHA1_5x5 s55(core_clk, pad, data_sha_input, out_ctx);
+   scfifo pad2fifo (
+		    .clock (core_clk),
+		    .data (pad2_in),
+		    .rdreq (pad2_read_enable),
+		    .sclr (dumpfifos),
+		    .wrreq (pad2_write_enable),
+		    .empty (),
+		    .full (),
+		    .q (pad_half),
+		    .aclr (),
+		    .almost_empty (),
+		    .almost_full (),
+		    .usedw (),
+		.eccstatus());			 
+   defparam
+	pad2fifo.add_ram_output_register = "OFF",
+	pad2fifo.lpm_numwords = N+1,
+	pad2fifo.lpm_showahead = "OFF",
+	pad2fifo.lpm_type = "scfifo",
+	pad2fifo.lpm_width = 160,
+	pad2fifo.lpm_widthu = $clog2(N+1),
+	pad2fifo.overflow_checking = "OFF",
+	pad2fifo.underflow_checking = "OFF",
+	pad2fifo.use_eab = "ON";
+	
+/*
+	reg ctx_read_enable=0, ctx_write_enable=0;
+	reg[159:0] ctx_delayed;
+   scfifo ctxfifo (
+		    .clock (core_clk),
+		    .data (pad),
+		    .rdreq (ctx_read_enable),
+		    .sclr (dumpfifos),
+		    .wrreq (ctx_write_enable),
+		    .empty (),
+		    .full (),
+		    .q (ctx_delayed),
+		    .aclr (),
+		    .almost_empty (),
+		    .almost_full (),
+		    .usedw (),
+		.eccstatus());			 
+   defparam
+	ctxfifo.add_ram_output_register = "OFF",
+	ctxfifo.lpm_numwords = N,
+	ctxfifo.lpm_showahead = "OFF",
+	ctxfifo.lpm_type = "scfifo",
+	ctxfifo.lpm_width = 160,
+	ctxfifo.lpm_widthu = $clog2(N),
+	ctxfifo.overflow_checking = "OFF",
+	ctxfifo.underflow_checking = "OFF",
+	ctxfifo.use_eab = "ON";
+*/
+	SHA1_5x5_bare s55(core_clk, pad, data_sha_input, out_ctx);
 
 	reg [31:0] loop_counter=0;
 	reg [10:0] inst_counter=0;
-	reg [31:0] write_count=0;
-	reg [31:0] read_count=0;
+	reg [15:0] write_count=0;
 	
-	assign data_sha_input=(counter>=2*N+1) ? data : acc_in_reg;
-	reg pad_write_enable_local=0;
-	reg acc_write_enable_local=0;
+	reg data_src_switch=0;
 
-	assign pad_write_enable = (status==0 && write_count<N*2) ? user_w_write_wren : pad_write_enable_local;
+
+	assign data_sha_input=(data_src_switch) ? data : acc_in_reg;
+	reg pad_write_enable_local=0;
+	reg pad2_write_enable_local=0;
+	reg acc_write_enable_local=0;
+	
+	reg [2:0] sink=0;
+/*
+	assign pad_write_enable = (status==0 && write_count<N+1) ? user_w_write_wren : pad_write_enable_local;
+	assign pad2_write_enable = (status==0 && write_count>=N+1 && write_count<N*2) ? user_w_write_wren : pad2_write_enable_local;
 	assign acc_write_enable = (status==0 && write_count>=N*2) ? user_w_write_wren : acc_write_enable_local;
-	assign pad_in = (status==0 && write_count<N*2) ? user_w_write_data : pad;
+	assign pad_in = (status==0 && write_count<N+1) ? user_w_write_data : pad_half;
+	assign pad2_in = (status==0 && write_count>=N+1 && write_count<N*2) ? user_w_write_data : pad;
 	assign acc_in = (status==0 && write_count>=N*2) ? user_w_write_data : acc_in_reg;
-	assign data_in = out_ctx;
+	*/
+	assign pad_write_enable = (sink==0) ? user_w_write_wren : pad_write_enable_local;
+	assign pad2_write_enable = (sink==1) ? user_w_write_wren : pad2_write_enable_local;
+	assign acc_write_enable = (sink==2) ? user_w_write_wren : acc_write_enable_local;
+	assign pad_in = (sink==0) ? user_w_write_data : pad_half;
+	assign pad2_in = (sink==1) ? user_w_write_data : pad;
+	assign acc_in = (sink==2) ? user_w_write_data : acc_in_reg;
+	
+	assign data_in = out_ctx;	
 	assign user_w_write_full=(write_count==N*3);
+/***
+
+ At each step, we read from the front of padfifo and write into the back of pad2fifo
+
+ And we read into pad_half from the front of pad2fifo and write from it into padfifo
+***/
 
 always @ (posedge core_clk)               
 	begin						
@@ -325,8 +815,13 @@ always @ (posedge core_clk)
 			if(user_w_write_wren)
 				begin
 					write_count<=write_count+1;
-					if(write_count==N*3-1)
+					if(write_count==N)
+						sink<=1;
+					else if(write_count==N*2-1)
+						sink<=2;
+					else if(write_count==N*3-1)
 					begin
+						sink<=3;
 						counter <= N;
 						loop_counter <= 0;
 						inst_counter <= N;
@@ -348,11 +843,16 @@ always @ (posedge core_clk)
 		else if(status==1)// 1 clock for acc_read_enable to kick in
 			begin
 				pad_read_enable<=1;
+				pad2_read_enable<=1;
 				status<=2;
 			end
 		else if(status==2)
 			begin
 				pad_write_enable_local<=1;
+				pad2_write_enable_local<=1;
+//				ctx_write_enable<=1;
+				if(counter==2*N)
+					data_src_switch<=1;
 
 				if(counter >= Niter*N*2-1)
 					begin
@@ -380,9 +880,9 @@ always @ (posedge core_clk)
 						inst_counter <= inst_counter+1;
 					end
 				
-				if(counter<2*N-1)//if(loop_counter==0)
+				if(counter<2*N-2)//if(loop_counter==0)
 					begin
-						if(inst_counter<N+L)
+						if(inst_counter<N+L-1)
 							begin
 								data_write_enable<=0;
 								data_read_enable<=0;
@@ -397,11 +897,16 @@ always @ (posedge core_clk)
 					begin
 						data_write_enable<=1;
 						data_read_enable<=1;
+//						ctx_read_enable<=1;
 					end
 				
-
+				data[31:0]<=data_bare[31:0]+pad_half[31:0];
+				data[63:32]<=data_bare[63:32]+pad_half[63:32];
+				data[95:64]<=data_bare[95:64]+pad_half[95:64];
+				data[127:96]<=data_bare[127:96]+pad_half[127:96];
+				data[159:128]<=data_bare[159:128]+pad_half[159:128];
 //				data_in<=out_ctx;
-				if(acc_read_enable_local || counter >= Niter*N*2-1)
+				if(acc_read_enable_local || counter == Niter*N*2-1 || loop_counter==Niter)
 					begin
 						if(consume_flag)
 							acc_in_reg<=acc_out^data;
@@ -417,6 +922,8 @@ always @ (posedge core_clk)
 					//acc_in_reg<=acc_out;//acc_in_reg<=acc_out^data;
 					acc_read_enable_local<=1;
 					acc_write_enable_local<=0;
+//					ctx_read_enable<=0;
+//					ctx_write_enable<=0;
 					//acc_empty<=0;
 					if(acc_read_enable_local==1)
 						status<=4;
@@ -429,13 +936,18 @@ always @ (posedge core_clk)
 								write_count<=0;
 								dumpfifos<=1;
 								pad_write_enable_local<=0;
+								pad2_write_enable_local<=0;
 								acc_write_enable_local<=0;
 								acc_read_enable_local<=0;
 								pad_read_enable<=0;
+								pad2_read_enable<=0;
 								data_read_enable<=0;
 								data_write_enable<=0;
-								read_count<=0;
+								data_src_switch<=0;
 								write_count<=0;
+								sink=0;
+//								ctx_read_enable<=0;
+//								ctx_write_enable<=0;
 							end
 				end
 	end
@@ -460,16 +972,17 @@ wire [7:0] out;
 	wire user_w_write_full;
 	reg user_w_write_wren=0;
 	reg [159:0] user_w_write_data;
+	reg [7:0] output_status;
 
-
-	pmk_calc_ring_fifo c (
+	pmk_calc_ring_fifo #(100,10) c (
 				clk, 
 				user_r_read_empty,
 				user_r_read_rden,
 				user_r_read_data,
 				user_w_write_full,
 				user_w_write_wren,
-				user_w_write_data
+				user_w_write_data,
+output_status
 			);
 
 	reg[159:0] ipad_0=160'hdd703e0b119e9000de162d2be611b157a562a2e5;
@@ -527,20 +1040,26 @@ begin
 					end
 
 //10-iteration subset
-			else if(counter>=3700 && counter<=3800)
+			else if(counter>=3700 && counter<3800)
 					begin
-						user_r_read_rden<=(counter<3800?1:0);
-						if(counter>3700)
-							recv_data[counter-3701]<=user_r_read_data;
+						user_w_write_wren<=0;
+						user_r_read_rden<=(counter<3799?1:0);
+						recv_data[counter-3700]<=user_r_read_data;
 					end		
 			else if(counter==3900)
 				begin
-					recv_data[0]<=recv_data[0]^expect_acc10_0;
-					recv_data[1]<=recv_data[1]^expect_acc10_1;
-					recv_data[98]<=recv_data[98]^expect_acc10_0;
-					recv_data[99]<=recv_data[99]^expect_acc10_1;
+					user_w_write_wren<=0;
+					$display("%x %x", recv_data[0][31:0], expect_acc10_0[31:0]);
+					$display("%x %x", recv_data[1][31:0], expect_acc10_1[31:0]);
+					assert(recv_data[0]==expect_acc10_0);
+					assert(recv_data[1]==expect_acc10_1);
+					assert(recv_data[98]==expect_acc10_0);
+					assert(recv_data[99]==expect_acc10_1);
 				end
+			else
+				user_w_write_wren<=0;
 			end
+				
 /*
 // full 4096: done around counter 820604
 			else if(counter>=820700 && counter<=820800)
@@ -717,7 +1236,7 @@ genvar gi;
 		assign read_160_enable[gi]=read_160_enable[N] && (inst==gi);
 		end
 	for(gi=0; gi<N; gi=gi+1) begin: workers
-		pmk_calc_ring_fifo #(Njobs) worker(clk, 
+		pmk_calc_ring_fifo #(Njobs,10) worker(clk, 
 			read_160_empty[gi],
 			read_160_enable[gi],
 			read_160_data[gi],
@@ -790,6 +1309,46 @@ always @ (posedge clk)
 	end
 endmodule
 
+
+`timescale 1 ns / 1 ns
+module sha1_tb;
+	reg clk;
+	reg [31:0] counter;
+	reg [159:0] ctx, data, out_ctx, expect_ctx_0, expect_ctx_1;
+initial
+begin
+	clk=1'b0;
+	counter = 32'b0;
+	ctx = 0;
+	data = 0;
+	expect_ctx_0 = 160'h1b6b263594af1e2cef6d7bb40f46529e885669bf;
+	expect_ctx_1 = 160'hef47e12a6961e1ba74a8282dac16e632221cf20a;
+end
+
+SHA1_5x5 sha(clk, ctx, data, out_ctx);
+
+always #1 
+begin
+	clk<=~clk;
+	counter<=counter+clk;
+	
+	if(clk)
+	begin
+		if(counter==100)
+			begin
+				ctx <= 160'h0123456789abcdef0123456789abcdef01234567;
+				data <= 160'h23456789abcdef0123456789abcdef0123456789;
+				$display("%x", out_ctx[31:0]);
+				assert(out_ctx==expect_ctx_0);
+			end
+		if(counter==200)
+			begin
+				$display("%x", out_ctx[31:0]);
+				assert(out_ctx==expect_ctx_1);
+			end
+	end
+end
+endmodule
 
 // test bench for pmk_dispatcher
 `timescale 1 ns / 1 ns
@@ -891,7 +1450,7 @@ begin
 				end
 		end
 		
-	for(I=10; I<495; I=I+1)
+	for(I=10; I<5*Njobs-5; I=I+1)
 		begin
 			for(J=0; J<N; J=J+1)
 				begin
@@ -958,6 +1517,9 @@ begin
 					begin
 					for(J=0; J<N; J=J+1)
 						begin
+						assert(recv_data[J*5*Njobs+I]==expect_acc10_0[I*32+:32]);
+						assert(recv_data[J*5*Njobs+I+5]==expect_acc10_1[I*32+:32]);
+						assert(recv_data[J*5*Njobs+I+5*Njobs-5]==expect_acc10_2[I*32+:32]);
 						if(recv_data[J*5*Njobs+I]!=expect_acc10_0[I*32+:32])
 							$display("Mismatch at %d %d: %x %x", I, J, recv_data[J*5*Njobs+I], expect_acc10_0[I*32+:32]);
 						if(recv_data[J*5*Njobs+I+5]!=expect_acc10_1[I*32+:32])
@@ -979,9 +1541,21 @@ begin
 				$display("Second read done");
 				for(I=0; I<5; I=I+1)
 					begin
-					assert(recv_data[I]==expect_acc10_1[I*32+:32]);
-					assert(recv_data[I+5]==expect_acc10_2[I*32+:32]);
-					assert(recv_data[I+5*Njobs-5]==expect_acc10_0[I*32+:32]);
+					for(J=0; J<N; J=J+1)
+						begin
+						assert(recv_data[J*5*Njobs+I]==expect_acc10_1[I*32+:32]);
+						assert(recv_data[J*5*Njobs+I+5]==expect_acc10_2[I*32+:32]);
+						assert(recv_data[J*5*Njobs+I+5*Njobs-5]==expect_acc10_0[I*32+:32]);
+//						if(!(recv_data[J*5*Njobs+I]==expect_acc10_1[I*32+:32]))
+						if(!(recv_data[J*5*Njobs+I]==expect_acc10_1[I*32+:32]))
+							begin
+							$display("Mismatch at %d %d: %x %x", I, J, recv_data[J*5*Njobs+I], expect_acc10_1[I*32+:32]);
+							end
+						if(!(recv_data[J*5*Njobs+I+5]==expect_acc10_2[I*32+:32]))
+							$display("Mismatch at %d %d: %x %x", I, J, recv_data[J*5*Njobs+I+5], expect_acc10_2[I*32+:32]);
+						if(recv_data[J*5*Njobs+I+5*Njobs-5]!=expect_acc10_0[I*32+:32])
+							$display("Mismatch at %d %d: %x %x", I, J, recv_data[J*5*Njobs+I+5*Njobs-5], expect_acc10_0[I*32+:32]);
+						end
 					end
 				end
 			else if(counter==second_read+5*Njobs*N+200)
