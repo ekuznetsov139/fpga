@@ -1,7 +1,7 @@
 /*****************************************************************************
 
    FPGA SHA1 and WPA2 PMK generators 
-	Fully unrolled; avg. 8000 ALM per instance with throughput of 1 SHA/clock
+	Fully unrolled; avg. 7000 ALM per instance with throughput of 1 SHA/clock 
 	Tested with Cyclone V 5CSEBA6U23I7 and 5CGTFD9E5F35C7
 
 *****************************************************************************/
@@ -55,7 +55,6 @@ module Round1_5x5(clk, va, x, outa);
 	parameter K3=32'h8F1BBCDC;	
 	parameter K4=32'hCA62C1D6;	
 	reg [255:0] t1;
-	reg [511:0] t0;
 	wire[31:0] x0, x1, x2;
 	wire[31:0] a, b, c, d, e, f, g, br, h;
 	assign {h,g,f,e,d,c,b,a}=va;
@@ -78,56 +77,18 @@ module Round1_5x5(clk, va, x, outa);
 			t1[191:160]<=(c^(a&(br^c)));
 			t1[223:192]<=h+x1;
 			t1[255:224]<=c+K1;
-		end
-		
+		end		
 
 	assign outa = t1;
-//	assign outx = t0;
 endmodule
 
 
 
-module Round15_5x5(clk, va, x1, outa);
-	input clk;
-	input [255:0] va;
-	input [31:0] x1;
-	output [255:0] outa;
-	parameter n = 15;
-	parameter m = 0;
-	parameter K1=32'h5A827999;
-	parameter K2=32'h6ED9EBA1;	
-	parameter K3=32'h8F1BBCDC;	
-	parameter K4=32'hCA62C1D6;	
-	reg [255:0] t1;
-	wire[31:0] a, b, c, d, e, f, g, br, h;
-	
-	assign {h,g,f,e,d,c,b,a}=va;
-	assign br = (b<<30)|(b>>2);
-	
-	reg [31:0] I;
+`define T24_INPUT
+//`define T13_INPUT
+//`define T2_INPUT
 
-	always @ (posedge clk)	
-		begin
-			t1[63:32]<=a;
-			t1[95:64]<=br;
-			t1[127:96]<=c;
-			t1[159:128]<=d;
-
-			t1[31:0] <= ((a<<5)|(a>>27))+f+g;
-			t1[191:160]<=(c^(a&(br^c)));
-			t1[223:192]<=h+x1;
-			t1[255:224]<=c+K1;
-		end
-	
-//	assign outx[159:32]=x[159:32];	
-//	assign outx[31:0]=x1;
-
-	assign outa = t1;
-//	assign outx = t0;
-endmodule
-
-
-module RoundN_5x5(clk, va, outa, vx);
+module RoundN_4x(clk, va, outa, vx);
 	input clk;
 	input [255:0] va;
 	input [127:0] vx;
@@ -150,10 +111,6 @@ function automatic [31:0] rot1;
 	end
 endfunction
 
-	//wire[31:0] x1, x2_t1, x3_t1, x4_t1;
-	//assign {x4_t1,x3_t1,x2_t1,x1} = vx;
-	wire[31:0] x1,x2,x3_t2,x4_t2;
-	assign {x4_t2,x3_t2,x2,x1} = vx;
 	
 function [31:0] getK;
 	input [31:0] n;
@@ -176,12 +133,9 @@ function [31:0] FUN;
 	end
 endfunction
 
-
-
 function [31:0] rot5;
 	input [31:0] x;
 	begin
-//	rot5 = (x<<5)|(x>>27);
 	rot5 = {x[26:0],x[31:27]};
 	end
 endfunction
@@ -193,37 +147,45 @@ function [31:0] rot30;
 	end
 endfunction
 
-	reg [31:0] I;
-
-	
 	wire [31:0] a0, b0, c0, d0, e0, f0, g0, h0;
 	assign {h0,g0,f0,e0,d0,c0,b0,a0}=va;
 
-	reg [31:0] a4, b4, c4, d4, e4, f4, g4, h4;
-	reg[31:0] a1, b1, c1, h1, y10,  a2, b2, c2, y20, y21,  a3, b3, y30, y31, y32;
-
-	reg[31:0] x1_t2, x3_t4;
-	
-	//reg[31:0] x2, x3_t2, x4_t2;
-	reg[31:0] x3, x4_t3;
-	reg[31:0] x4;
-	
-	
-
-	reg[31:0] y22, y33;
-	
+	reg[31:0] a4, b4, c4, d4, e4, f4, g4, h4;
+	reg[31:0] a1, b1, c1, h1, y10,  a2, b2, c2, y20, y21, y22, a3, b3, y30, y31, y32, y33;
+`ifdef T2_INPUT
+	reg[31:0] x1_t2, x3_t4;	
+	wire[31:0] x2,x3_t2,x4_t2;
+	reg[31:0] x3, x4_t3, x4;	
+	assign {x4_t2,x3_t2,x2,x1_t2} = vx;
+`elsif T13_INPUT	
+	reg[31:0] x1_t2, x3_t4;	
+	wire[31:0] x1, x2_t1, x3, x4_t3;
+	reg[31:0] x2, x4;
+	assign {x4_t3, x3, x2_t1, x1} = vx;
+`elsif T24_INPUT
+	wire[31:0] x1_t2, x2, x3_t4, x4;
+	assign {x4, x3_t4, x2, x1_t2} = vx;
+`else
+	wire[31:0] x1, x2, x3, x4;
+	assign {x4, x3, x2, x1} = vx;
+`endif
 	always @ (posedge clk)	
 		begin
-		x1_t2 <= x1;
-//		x2 <= x2_t1;
-//		x3_t2 <= x3_t1;
-//		x4_t2 <= x4_t1;
-		
-		x3 <= x3_t2;
-		x4_t3 <= x4_t2;//rot1(x4_t2^x1_t2);
-		
+`ifdef T2_INPUT
 		x3_t4 <= x3;
+		x3 <= x3_t2;
+		x4_t3 <= x4_t2;
 		x4 <= x4_t3;
+`elsif T13_INPUT
+		x3_t4 <= x3;
+		x1_t2 <= x1;
+		x2 <= x2_t1;
+		x4 <= x4_t3;
+`elsif T24_INPUT
+`else
+		x3_t4 <= x3;
+		x1_t2 <= x1;
+`endif
 
 		a1<=a0;
 		b1<=b0;
@@ -258,27 +220,238 @@ endfunction
 //	assign outx = t0;
 endmodule
 
-
-module SHA1_5x5_bare(clk, timer, ctx, data, out_ctx);
+module Round80(clk, va, outa);
 	input clk;
-	input [4:0] timer;
+	input [255:0] va;
+	output wire [255:0] outa;
+	reg [255:0] t1=0;
+	wire[31:0] a, b, c, d, f, g, br, h;
+
+	assign a=va[31:0];
+	assign b=va[63:32];
+	assign c=va[95:64];
+	assign d=va[127:96];
+	assign f=va[191:160];
+	assign g=va[223:192];
+	assign br = (b<<30)|(b>>2);
+	
+	always @ (posedge clk)	
+		begin
+			t1[31:0] <= ((a<<5)|(a>>27))+f+g;
+			t1[63:32]<=a;
+			t1[95:64]<=br;
+			t1[127:96]<=c;
+			t1[159:128]<=d;
+		end
+	assign outa = t1;
+endmodule
+
+
+
+
+// synopsys translate_off
+`timescale 1 ps / 1 ps
+// synopsys translate_on
+module my_dpram (
+	clock,
+	data,
+	rdaddress,
+	wraddress,
+	wren,
+	q);
+	
+	parameter N=2048;
+	parameter D=64;
+	parameter logD=$clog2(D);
+	input	  clock;
+	input	[N-1:0]  data;
+	input	[logD-1:0]  rdaddress;
+	input	[logD-1:0]  wraddress;
+	input	  wren;
+	output [N-1:0]  q;
+`ifndef ALTERA_RESERVED_QIS
+// synopsys translate_off
+`endif
+	tri0	  wren;
+`ifndef ALTERA_RESERVED_QIS
+// synopsys translate_on
+`endif
+
+	wire [N-1:0] sub_wire0;
+	wire [N-1:0] q = sub_wire0[N-1:0];
+
+	altdpram	altdpram_component (
+				.data (data),
+				.inclock (clock),
+				.outclock (clock),
+				.rdaddress (rdaddress),
+				.wraddress (wraddress),
+				.wren (wren),
+				.q (sub_wire0),
+				.aclr (1'b0),
+				.byteena (1'b1),
+				.inclocken (1'b1),
+				.outclocken (1'b1),
+				.rdaddressstall (1'b0),
+				.rden (1'b1),
+				.sclr (1'b0),
+				.wraddressstall (1'b0));
+	defparam
+		altdpram_component.indata_aclr = "OFF",
+		altdpram_component.indata_reg = "INCLOCK",
+		altdpram_component.intended_device_family = "Cyclone V",
+		altdpram_component.lpm_type = "altdpram",
+		altdpram_component.maximum_depth = D,
+		altdpram_component.outdata_aclr = "OFF",
+		altdpram_component.outdata_reg = "UNREGISTERED",
+		altdpram_component.ram_block_type = "MLAB",
+		altdpram_component.rdaddress_aclr = "OFF",
+		altdpram_component.rdaddress_reg = "UNREGISTERED",
+		altdpram_component.rdcontrol_aclr = "OFF",
+		altdpram_component.rdcontrol_reg = "UNREGISTERED",
+		altdpram_component.read_during_write_mode_mixed_ports = "CONSTRAINED_DONT_CARE",
+		altdpram_component.width = N,
+		altdpram_component.widthad = logD,
+		altdpram_component.width_byteena = 1,
+		altdpram_component.wraddress_aclr = "OFF",
+		altdpram_component.wraddress_reg = "INCLOCK",
+		altdpram_component.wrcontrol_aclr = "OFF",
+		altdpram_component.wrcontrol_reg = "INCLOCK";
+endmodule
+
+// synopsys translate_off
+`timescale 1 ps / 1 ps
+// synopsys translate_on
+module my_syncram (
+	clock,
+	data,
+	rdaddress,
+	wraddress,
+	wren,
+	q);
+	
+	parameter N=2048;
+	parameter D=64;
+	parameter logD=$clog2(D);
+	input	  clock;
+	input	[N-1:0]  data;
+	input	[logD-1:0]  rdaddress;
+	input	[logD-1:0]  wraddress;
+	input	  wren;
+	output [N-1:0]  q;
+`ifndef ALTERA_RESERVED_QIS
+// synopsys translate_off
+`endif
+	tri0	  wren;
+`ifndef ALTERA_RESERVED_QIS
+// synopsys translate_on
+`endif
+
+	wire [N-1:0] sub_wire0;
+	wire [N-1:0] q = sub_wire0[N-1:0];
+
+	altsyncram	altsyncram_component (
+				.address_a (wraddress),
+				.address_b (rdaddress),
+				.clock0 (clock),
+				.data_a (data),
+				.wren_a (wren),
+				.q_b (sub_wire0),
+				.aclr0 (1'b0),
+				.aclr1 (1'b0),
+				.addressstall_a (1'b0),
+				.addressstall_b (1'b0),
+				.byteena_a (1'b1),
+				.byteena_b (1'b1),
+				.clock1 (1'b1),
+				.clocken0 (1'b1),
+				.clocken1 (1'b1),
+				.clocken2 (1'b1),
+				.clocken3 (1'b1),
+				.data_b ({N{1'b1}}),
+				.eccstatus (),
+				.q_a (),
+				.rden_a (1'b1),
+				.rden_b (1'b1),
+				.wren_b (1'b0));
+	defparam
+		altsyncram_component.address_aclr_b = "NONE",
+		altsyncram_component.address_reg_b = "CLOCK0",
+		altsyncram_component.clock_enable_input_a = "BYPASS",
+		altsyncram_component.clock_enable_input_b = "BYPASS",
+		altsyncram_component.clock_enable_output_b = "BYPASS",
+		altsyncram_component.intended_device_family = "Cyclone V",
+		altsyncram_component.lpm_type = "altsyncram",
+		altsyncram_component.maximum_depth = D,
+		altsyncram_component.numwords_a = D,
+		altsyncram_component.numwords_b = D,
+		altsyncram_component.operation_mode = "DUAL_PORT",
+		altsyncram_component.outdata_aclr_b = "NONE",
+		altsyncram_component.outdata_reg_b = "UNREGISTERED",
+		altsyncram_component.ram_block_type = "AUTO",
+		altsyncram_component.power_up_uninitialized = "FALSE",
+		altsyncram_component.read_during_write_mode_mixed_ports = "DONT_CARE",
+		//altsyncram_component.read_during_write_mode_mixed_ports = "NEW_DATA",
+		altsyncram_component.widthad_a = logD,
+		altsyncram_component.widthad_b = logD,
+		altsyncram_component.width_a = N,
+		altsyncram_component.width_b = N,
+		altsyncram_component.width_byteena_a = 1;
+endmodule
+
+
+
+
+
+
+module SHA1_5x5_bare(clk, ext_timer_signal, ctx, data, out_ctx);
+	input clk;
+	input [6:0] ext_timer_signal;
 	input [159:0] ctx, data;
 	output wire[159:0] out_ctx;
-	reg[159:0] va0;
-	//parameter n=80;
-	wire[511:0] xw16;
+
 	wire[255:0] va[32:1];
-	reg[159:0] out_sum;
-	reg[31:0] sum1, sum2;
-	reg [7:0] I, J;
+	wire[31:0] sum1, sum2;
+	reg [7:0] I, J;	
+	reg[159:0] xbuf1[15:1];	
+	wire[159:0] vx[31:15];
+
+	reg[5:0] timer_signal;
 	
-
-
 function automatic [31:0] rot1;
 	input [31:0] y;
 	begin
-//	rot1 = (x<<1)|(x>>31);
 	rot1 = {y[30:0], y[31:31]};
+	end
+endfunction
+
+function automatic [31:0] rot2;
+	input [31:0] y;
+	begin
+	rot2 = {y[29:0], y[31:30]};
+	end
+endfunction
+
+function automatic [31:0] rot3;
+	input [31:0] y;
+	begin
+	rot3 = {y[28:0], y[31:29]};
+	end
+endfunction
+
+function automatic [31:0] rot4;
+	input [31:0] y;
+	begin
+	rot4 = {y[27:0], y[31:28]};
+	end
+endfunction
+
+
+function [31:0] fetch1;
+	input [511:0] x;
+	input [31:0] n;
+	begin
+		fetch1=x[(n&15)*32+:32];
 	end
 endfunction
 
@@ -287,7 +460,7 @@ function automatic [31:0] fetch4;
 	input [31:0] n;
 	reg [31:0] x0, x1, x2, x3;
 	begin
-		x0=x[n*32+:32];
+		x0=x[(n&15)*32+:32];
 		x1=x[((n+2)&15)*32+:32];
 		x2=x[((n+8)&15)*32+:32];
 		x3=x[((n+13)&15)*32+:32];
@@ -295,116 +468,310 @@ function automatic [31:0] fetch4;
 	end	
 endfunction
 
+function automatic [191:0] fetch6;
+	input [511:0] x;
+	input [31:0] n;
+	reg [31:0] x0, x1, x2;
+	begin		
+		x0=fetch4(x, n);
+		x1=fetch4(x, n+1);
+		x2=fetch4(x, n+2);
+		fetch6={
+		rot1(x2^fetch1(x,n+5)^fetch1(x,n+7)^fetch1(x,n+13)), 
+		rot1(x1^fetch1(x,n+4)^fetch1(x,n+6)^fetch1(x,n+12)), 
+		rot1(x0^fetch1(x,n+3)^fetch1(x,n+5)^fetch1(x,n+11)), 
+		x2, x1, x0};
+	end
+endfunction
 
-	reg[159:0] xbuf1[15:0];
-	
 
-	Round1 r0(clk, va0, xbuf1[0], va[1], sum1, sum2);
-	
-	wire[127:0] vx[31:16];
-	
-`define REAL_VX
-	
-`ifdef REAL_VX
-	(* ramstyle = "M10K" *) reg[511:0] xbuf2[80:15];
+function [511:0] permute_step1;
+		input [511:0] x;
 
-generate
-	genvar gi;
-	for(gi=16; gi<32; gi=gi+1)
-		begin : abc
-			
-			// If I declare 'n' as 'wire[31:0]', the compiler throws a 'non-constant index always falls outside the declared range' error
-			// If I declare 'n' as 'integer', it gets stuck on elaborating SHA1_5x5_bare
-			// Therefore the only option is to explicitly stick (gi-16)... in place of n
-			
-			//wire[31:0] m4;
-			integer m4;
-			//integer n;
-			//assign n = (gi-16)*4+16;
-			assign m4 = ((gi-16)*4+4) & 15;
-			wire [31:0] x1,x2,x3,x4;
-			wire[127:0] xc;
+		reg[31:0] x0, x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,
+		t0,t1,t2,t3,t4;
+		reg [31:0] x0_, x1_, x2_, x3_, x4_, x5_;
+	begin
+		x0=fetch1(x,0);
+		x1=fetch1(x,1);
+		x2=fetch1(x,2);
+		x3=fetch1(x,3);
+		x4=fetch1(x,4);
+		x5=fetch1(x,5);
+		x6=fetch1(x,6);
+		x7=fetch1(x,7);
+		x8=fetch1(x,8);
+		x9=fetch1(x,9);
+		x10=fetch1(x,10);
+		x11=fetch1(x,11);
+		x12=fetch1(x,12);
+		x13=fetch1(x,13);
+		x14=fetch1(x,14);
+		x15=fetch1(x,15);
+	
+		x0_=rot1(x0^x2^x8^x13);
+		x1_=rot1(x1^x3^x9^x14);
+		x2_=rot1(x2^x4^x10^x15);
 		
-			assign x1 = fetch4(xbuf2[(gi-16)*4+16], ((gi-16)*4+16+1)&15);
-			assign x2 = fetch4(xbuf2[(gi-16)*4+16], ((gi-16)*4+16+2)&15);
-			assign x3 = fetch4(xbuf2[(gi-16)*4+16], ((gi-16)*4+16+3)&15);
-			//wire[31:0] x4 = fetch4(fetch4(xbuf2[n], (n+1)&15);
-			assign x4 = xbuf2[(gi-16)*4+16][m4*32+:32]^xbuf2[(gi-16)*4+16][((m4+2)&15)*32+:32]^xbuf2[(gi-16)*4+16][((m4+8)&15)*32+:32];
-			
-			
-			
-			reg[31:0] x1d, x2d, x3d, x4d;
-			assign xc = {rot1(x1d^x4d), x3d, x2d, x1d};
+		x5_ = rot1(x2_^x5^x7^x13); 
+		x4_ = rot1(x1_^x4^x6^x12);
+		x3_ = rot1(x0_^x3^x5^x11);
 
-			assign vx[gi]={rot1(x1d^x4d),x3d,x2d,x1};
-			
-		always @(posedge clk)
-			begin
-				x1d<=x1;
-				x2d<=x2;
-				x3d<=x3;
-				x4d<=x4;
-				
-				xbuf2[(gi-16)*4+16+1]<=xbuf2[(gi-16)*4+16];
-				
-				if((gi&3)==0)
-					xbuf2[(gi-16)*4+16+2] <= {xbuf2[(gi-16)*4+16+1][511:160], xc, xbuf2[(gi-16)*4+16+1][31:0]};
-				else if((gi&3)==1)
-					xbuf2[(gi-16)*4+16+2] <= {xbuf2[(gi-16)*4+16+1][511:288], xc, xbuf2[(gi-16)*4+16+1][159:0]};
-				else if((gi&3)==2)
-					xbuf2[(gi-16)*4+16+2] <= {xbuf2[(gi-16)*4+16+1][511:416], xc, xbuf2[(gi-16)*4+16+1][287:0]};
-				else
-					xbuf2[(gi-16)*4+16+2] <= {x3d, x2d, x1d, xbuf2[(gi-16)*4+16+1][415:32], rot1(x1d^x4d)};
-				xbuf2[(gi-16)*4+16+3]<=xbuf2[(gi-16)*4+16+2];
-				xbuf2[(gi-16)*4+16+4]<=xbuf2[(gi-16)*4+16+3];
-			end
+		// Don't ask
+		t0 = x6^x8^x14;
+		t1 = rot1(x12)^rot2(x9^x11)^rot3(x6^x8^x14);
+		t2 = x7^x9^x15;
+		t3 = x11^rot1(x8^x10)^rot2(x0^x2^x8^x13);
+		t4 = x15^rot1(x10^x12);
+
+		permute_step1={
+		x0_, x1_, x2_, x3_, x4_, x5_,
+		t0, t1, t2, t3, t4,
+		x9, x11, x13, x14, x15};
 		end
-endgenerate	
+endfunction
+
+function [511:0] permute_step2;
+	input [511:0] temp;
+	
+	reg[31:0] x0_, x1_, x2_, x3_, x4_, x5_,
+		t0, t1, t2, t3, t4,
+		x9, x11, x13, x14, x15;
+		reg[31:0] x6_, x7_, x8_, x9_, x10_, x11_, x12_, x13_, x14_, x15_;
+		
+	begin
+	{x0_, x1_, x2_, x3_, x4_, x5_,
+		t0, t1, t2, t3, t4,
+		x9, x11, x13, x14, x15} = temp;
+		
+		x6_ = rot1(t0^x3_);
+		x7_ = rot1(t2^x4_);
+		x8_ = x11^t3^rot1(x5_);
+		x9_ = rot1(x9^x11^x1_)^rot2(t0^x3_);
+		x10_ = x15^t4^rot1(x2_)^rot2(t2^x4_);
+		x11_ = rot1(x13^t3^x3_)^rot2(x5_);
+		x12_ = t1^rot1(x14^x4_)^rot2(x1_)^rot3(x3_);
+		x13_ = rot1(x13^t4^x5_)^rot2(x2_)^rot3(t2^x4_);
+		x14_ = rot1(x14^x0_)^rot2(t0^t3^x13)^rot3(x5_);
+		x15_ = rot1(t1^x1_^x15)^rot2(t2^x14)^rot3(x1_)^rot4(x3_);
+		permute_step2={x15_,x14_,x13_,x12_,x11_,x10_,x9_,x8_,x7_,x6_,x5_,x4_,x3_,x2_,x1_,x0_};
+		end
+
+endfunction
+	
+	wire[2111:0] mem_input;
+	wire[2047:0] mem_output;
+	reg wren=1;
+
+	//`define DPRAM my_dpram
+	//integer read_delay=0;
+
+	`define DPRAM my_syncram
+	integer read_delay=1;
+
+	reg[191:0] vxt1;
+	reg[511:0] vxt[10:2];
+
+genvar gi, gj;
+generate
+	wire[351:0] fixed={32'h2a0, 288'b0, 32'h80000000};
+	wire[5:0] in_addresses[31:0];
+
+`define LEVEL_8
+
+`ifdef LEVEL_8
+/*
+cell	in out
+0		1	1
+1		1	1
+2		1	-1
+3		1	-1
+4		1	-3
+5		1	-3
+6		1	-5
+7		1	-5
+8		1	-7
+9		1	-7
+10		1	-9
+11		1	-9
+12		1	-11
+13		1	-11
+14		1	-13
+15		1	-13
+16		-1
+...
+59		-5	-57
+60		-5	-59
+61		-5	-59
+62		-5	-61
+63		-5	-61
+
+*/
+	reg[511:0] levels[3:0];
+	wire[511:0] input_data;
+	reg[511:0] temp_data[3:0];
+	assign input_data={fixed,xbuf1[14][159:0]};
+
+	// a tricky way to get all 64 permute steps done in just 8 clocks with 2048 bit of internal storage,
+	// with no more than 7 inputs/LUT at any point.
+	// (A naive implementation would require dragging along full 512-bit buffer for 64 clocks, though 
+	// some of that logic would hopefully be hidden in memory blocks.)
+	// Then, since we don't need all that data so early, stick it into an altsyncram delay buffer and withdraw as needed.
+	always @(posedge clk)
+		begin
+		temp_data[0]<=permute_step1(input_data);
+		levels[0]<=permute_step2(temp_data[0]);
+		temp_data[1]<=permute_step1(levels[0]);
+		levels[1]<=permute_step2(temp_data[1]);
+		temp_data[2]<=permute_step1(levels[1]);
+		levels[2]<=permute_step2(temp_data[2]);
+		temp_data[3]<=permute_step1(levels[2]);
+		levels[3]<=permute_step2(temp_data[3]);
+	end
+	for(gi=0; gi<4; gi=gi+1) begin: a1
+		assign mem_input[gi*512+:512]=levels[gi];
+			
+		for(gj=0; gj<8; gj=gj+1) begin: a2
+				assign in_addresses[gj+gi*8]=(timer_signal+128-gi*2)&63;
+		end
+	end
+	assign vx[15][63:0]=levels[0][63:0];
+//	assign vx[15][127:64]=levels[0][127:64];
+	for(gi=0; gi<16; gi=gi+1) begin : bbb
+		for(gj=0; gj<4; gj=gj+1) begin : aaa
+			if(gi*4+gj>=2)
+				assign vx[gi+15][gj*32+:32]=mem_output[(gi*4+gj)*32+:32];
+		end
+	end
 
 `else
-	(* ramstyle = "M10K" *) reg[511:0] xbuf2[16:15];
-generate
-	genvar gi;
-	for(gi=16; gi<32; gi=gi+1)
-		begin : abc
-			assign vx[gi]=xbuf1[15][127:0];
+
+/***
+cell	in	out  out2	
+0		-1	n/a	1
+1		-1	n/a	1
+2		-1	-1		-1
+3		-1	-2		-1
+4		-1	-3		-3
+5		-1	-4		-3
+6		-2	-5		-5
+7		-2	-6		-5
+8		-2	-7		-7
+9		-2	-8		-7
+10		-2	-9
+11		-2	-10
+12		-3	-11
+13		-3	-12
+14		-3	-13
+15		-3	-14
+16		-3	-15
+...
+59		-10 -58
+60		-11 -59
+61		-11 -60
+62		-11 -61
+63		-11 -62	
+***/
+	always @(posedge clk)
+		begin
+		vxt1<=mem_input[191:0];
+		vxt[2]<={mem_input[383:192], vxt1, 32'h2a0, 96'b0};
+		//vxt[3]<={mem_input[575:384], vxt[2][511:192]};
+		for(I=2; I<=9; I=I+1)
+			vxt[I+1]<={mem_input[I*6*32+:192], vxt[I][511:192]};
 	end
-endgenerate
-`endif
+	assign mem_input[191:0]=fetch6({fixed, xbuf1[15][159:0]}, 0);
+	assign mem_input[383:192]=fetch6({vxt1, fixed[351:32]}, 0);
 	
-generate
-//genvar gi;
+	for(gi=0; gi<=10; gi=gi+1) begin: a1
+		if(gi!=0 && gi!=1)
+			assign mem_input[gi*6*32+:192]=fetch6(vxt[gi],0);
+			
+		for(gj=0; gj<3; gj=gj+1) begin: a2
+			if(gj+gi*3<32)
+				assign in_addresses[gj+gi*3]=(timer_signal+128-gi+1)&63;
+		end
+	end
+
+	assign vx[15][63:0]=vxt1[63:0];
+	assign vx[15][127:64]=vxt[3][63:0];
+	for(gi=0; gi<16; gi=gi+1) begin : bbb
+		for(gj=0; gj<4; gj=gj+1) begin : aaa
+			if(gi*4+gj>=4)
+				assign vx[gi+15][gj*32+:32]=mem_output[(gi*4+gj)*32+:32];
+		end
+	end
+	
+`endif
+/*	
+	reg[607:0] temp;
+	reg[511:0] level1, input_data;
+	always@(posedge clk)
+		begin
+		input_data<={fixed,xbuf1[15][159:0]};
+		temp<=permute_step1(input_data);
+		level1<=permute_step2(temp);
+		end
+*/
+
+//	wire[511:0] in0;
+//	assign in0={32'h2a0, 288'b0, 32'h80000000, xbuf1[14][159:0]};
+//	wire[511:0] in1;
+//	assign in1={vxt1, 32'h2a0, 288'b0};
+//	assign mem_input[191:0]=fetch6(in0, 0);
+//	assign mem_input[383:192]=fetch6(in1, 0);
+//	wire[511:0] in0={fixed, xbuf1[14][159:0]};
+//	wire[511:0] in1={vxt1, fixed[351:32]};
+
+
+	// need a combined port width of 32*4*16 = 2048 bit just to feed RoundN_4x with no overhead
+	// therefore we'll be needing 64 M10K tiles to power this, at a depth of 64 or less
+	for(gi=1; gi<32; gi=gi+1) begin: ccc
+		localparam logd= (1+$clog2(gi+1));
+		localparam d=1<<logd;
+		
+		wire[logd-1:0] out_addr;
+		assign out_addr=((timer_signal+128-gi*2+read_delay)&(d-1));
+		`DPRAM #(64,d) inst(clk, mem_input[gi*64+:64], out_addr, in_addresses[gi][logd-1:0], wren, mem_output[gi*64+:64]);
+	end
+
+
   for (gi=1; gi<15; gi=gi+1) begin : VR1
     Round1_5x5 #(gi) r(clk, va[gi], xbuf1[gi], va[gi+1]);
   end
-  for (gi=16; gi<32; gi=gi+1) begin : VR2
-	
-    RoundN_5x5 #(16 + (gi-16)*4) r(clk, va[gi], va[gi+1], vx[gi]);
+  for (gi=15; gi<31; gi=gi+1) begin : VR2
+    RoundN_4x #(15 + (gi-15)*4) r(clk, va[gi], va[gi+1], vx[gi][127:0]);
   end
 endgenerate
-	Round15_5x5 r15(clk, va[15], rot1(xbuf1[15][31:0]^xbuf1[15][95:64]), va[16]);
+	Round1 r0(clk, ctx, data, va[1], sum1, sum2);
+	Round80 r80(clk, va[31], va[32]);
+
+	assign sum1=((ctx[31:0]<<5)|(ctx[31:0]>>27))+ctx[159:128];
+	assign sum2=data[31:0]+32'h5A827999;
+	
 always @ (posedge clk)
 	begin
-		va0<=ctx;
+		timer_signal <= ext_timer_signal[5:0];
+/*
+		if(ext_timer_signal==0)
+			begin
+				for(I=0; I<16; I=I+1)
+					$display("0x%x, 0x%x, 0x%x, 0x%x,", vx[I+15][31:0], vx[I+15][63:32], vx[I+15][95:64], vx[I+15][127:96]);
 
-		xbuf1[0]<=data;
-		for(I=0; I<15; I=I+1)
+			for(I=0; I<4; I=I+1)
+				$display("%x %x %x %x", 
+					level1[(I*4+3)*32+:32], 
+					level1[(I*4+2)*32+:32], 
+					level1[(I*4+1)*32+:32], 
+					level1[(I*4+0)*32+:32]);
+			end
+			*/
+		xbuf1[1]<=data;
+		for(I=1; I<15; I=I+1)
 			xbuf1[I+1]<=xbuf1[I];
-			
-		xbuf2[16][31:0] <= rot1(xbuf1[15][31:0]^xbuf1[15][95:64]);
-		xbuf2[16][159:32]<=xbuf1[15][159:32];
-		
-		xbuf2[16][191:160]<=32'h80000000;
-		xbuf2[16][479:192]<=0;
-		xbuf2[16][511:480]<=32'h2a0;
-		sum1<=((ctx[31:0]<<5)|(ctx[31:0]>>27))+ctx[159:128];
-		sum2<=data[31:0]+32'h5A827999;
-	end
+		end
 	assign out_ctx = va[32][159:0];
 endmodule 
-
-
-
 
 
 module ring_buffer(core_clk,
@@ -469,14 +836,14 @@ module pmk_calc_ring_fifo(core_clk,
 	parameter N=100;
 	parameter Niter=10;
 	//parameter Niter=4096;
-	parameter L=82;
+	parameter L=81;
 	parameter NL=N-L;
 
 	reg[7:0] status=0;
 	reg[22:0] counter; // maximum value Niter*N*2. 20 bits enough for up to N=128.
 	wire[159:0] out_ctx;
 	reg[31:0] I, J;
-	reg acc_empty;
+	reg acc_empty, acc_empty_delay1, acc_empty_delay2;
 	reg[159:0] pad, data;
 	reg[159:0] pad_half_delayed;
 	wire[159:0] data_sha_input, data_bare;
@@ -529,8 +896,8 @@ module pmk_calc_ring_fifo(core_clk,
 	reg acc_cycle_local=0;
 	assign acc_ring_in_data=(status!=2) ? write_data_copy : (acc_ring_out_data^data);
 
-	reg[4:0] timer=0;
-	SHA1_5x5_bare s55(core_clk, timer, pad_ring_out_data, data_sha_input, out_ctx);
+	reg[31:0] timer=0;
+	SHA1_5x5_bare s55(core_clk, timer[6:0], pad_ring_out_data, data_sha_input, out_ctx);
 
 	reg [15:0] loop_counter=0;
 	reg [10:0] inst_counter=0;
@@ -543,29 +910,41 @@ module pmk_calc_ring_fifo(core_clk,
 	reg [7:0] sms=0;
 	reg [2:0] sink=0;
 
+	reg [159:0]	write_data_delay1, write_data_delay2, read_data_delay1, read_data_delay2;
 	assign user_w_write_full=(write_count==N*3);
 	assign acc_cycle = (status==4) ? user_r_read_rden : acc_cycle_local;
-	assign user_r_read_data=acc_ring_out_data;
+	assign user_r_read_data=read_data_delay2;//acc_ring_out_data;
 	assign user_r_read_empty=(status!=4) || acc_empty;
 	assign out_status = status;
+	
+	reg write_wren_delay1=0, write_wren_delay2=0;
+	
 
 always @ (posedge core_clk)               
 	begin					
-		if(timer!=31)
+	
+		write_wren_delay1 <= user_w_write_wren;
+		write_wren_delay2 <= write_wren_delay1;
+		write_data_delay1 <= user_w_write_data;
+		write_data_delay2 <= write_data_delay1;
+		
+		if(timer!=32'hffffffff)
 			timer<=timer+1;
 		else
 			timer<=0;
 		if(status==0)
 			begin
 			acc_empty<=0;
-			if(user_w_write_wren)
+			acc_empty_delay1<=0;
+			acc_empty_delay2<=0;
+			if(write_wren_delay2)
 				begin
 				
 				if(sink==0 || sink==1)
 					begin
 					pad_cycle<=1;
 					pad_replace<=1;
-					pad_ring_in_data<=user_w_write_data;
+					pad_ring_in_data<=write_data_delay2;
 					acc_cycle_local<=0;
 					acc_replace<=0;
 					end
@@ -575,7 +954,7 @@ always @ (posedge core_clk)
 					pad_replace<=0;
 					acc_cycle_local<=1;
 					acc_replace<=1;
-					write_data_copy<=user_w_write_data;
+					write_data_copy<=write_data_delay2;
 					end
 				
 				write_count<=write_count+1;
@@ -618,9 +997,11 @@ always @ (posedge core_clk)
 
 				if(counter==Niter*N*2-1)
 					sms<=4;
-				if(counter==Niter*N*2)
+				if(counter==Niter*N*2+0)
 					sms<=5;
-				if(counter==Niter*N*2+1)
+				if(counter==Niter*N*2+2)
+					sms<=6;
+				if(counter==Niter*N*2+3)
 					status<=4;
 				if(counter==2*N)
 					data_src_switch<=1;
@@ -628,10 +1009,12 @@ always @ (posedge core_clk)
 				//consume_flag<=(loop_counter!=0 && (inst_counter >= N))?1:0;
 				acc_replace<=(loop_counter!=0 && (inst_counter >= N) && sms<5)?1:0;
 
-				if(sms==4||sms==5)
+				if(sms==4||sms==6)
 					acc_cycle_local<=0;
 				else
 					acc_cycle_local<=1;
+				read_data_delay1 <= acc_ring_out_data;
+				read_data_delay2 <= read_data_delay1;
 				
 				counter<=counter+1;
 				if(inst_counter == 2*N-1)
@@ -658,10 +1041,15 @@ always @ (posedge core_clk)
 			else if(status==4)
 				begin
 				if(user_r_read_rden)
+					begin
 					read_count<=read_count+1;
-				if(read_count>=N)
-					acc_empty<=1;
-				if(acc_empty)
+					read_data_delay1 <= acc_ring_out_data;
+					read_data_delay2 <= read_data_delay1;
+					acc_empty_delay2 <= acc_empty_delay1;
+					acc_empty_delay1 <= acc_empty;
+					acc_empty <= (read_count>=N-2) ? 1 : 0;
+					end
+				if(read_count>=N-1)
 					begin
 					status<=0;
 					write_count<=0;
@@ -676,6 +1064,7 @@ always @ (posedge core_clk)
 endmodule	
 
 
+// experimental - not working correctly at present
 module pmk_calc_ring_fifo_v2(core_clk, 
 		user_r_read_empty,
 		user_r_read_rden,
@@ -1266,19 +1655,19 @@ endmodule
 module sha1_tb;
 	reg clk;
 	reg [31:0] counter;
-	reg [159:0] ctx, data, out_ctx, expect_ctx_0, expect_ctx_1;
+	reg [159:0] ctx, data, out_ctx, expect_ctx_0, expect_ctx_1, expect_ctx_2;
 initial
 begin
 	clk=1'b0;
 	counter = 32'b0;
-	ctx = 0;
-	data = 0;
+	ctx = 	0;//		160'h3141592689134205834965352a06585346c45230;
+	data = 	0;//		160'h9305823cdcdbfac3ed5342790158340985634986;
 	expect_ctx_0 = 160'h1b6b263594af1e2cef6d7bb40f46529e885669bf;
 	expect_ctx_1 = 160'hee249bc3dfb613cb7384e2c6226b184320f9aca3;
-	//160'hef47e12a6961e1ba74a8282dac16e632221cf20a;
+	expect_ctx_2 = 160'h1b7aba12f27e45604d1f89ac7ee643f2bf7bb5ea;
 end
 
-SHA1_5x5_bare sha(clk, counter[4:0], ctx, data, out_ctx);
+SHA1_5x5_bare sha(clk, counter[6:0], ctx, data, out_ctx);
 
 always #1 
 begin
@@ -1287,27 +1676,58 @@ begin
 	
 	if(clk)
 	begin
-		if(counter==100)
+	
+		if((counter&32'h7F)==32'h40)
 			begin
 				ctx <= 160'h0123456789abcdef0123456789abcdef01234567;
 				data <= 160'h23456789abcdef0123456789abcdef0123456789;
-				$display("%x %x", out_ctx[31:0], expect_ctx_0[31:0]);
-				assert(out_ctx==expect_ctx_0);
+				//$display("%x %x", out_ctx[31:0], expect_ctx_0[31:0]);
+				//assert(out_ctx==expect_ctx_0);
 			end
-		if(counter>100 && counter<200)
+		else if((counter&32'h7F)==32'h6f)
 			begin
-				if(out_ctx==expect_ctx_0)
-					$display("ctx_0 at %d", counter);
-				else if(out_ctx==expect_ctx_1)
-					$display("ctx_1 at %d", counter);
-				else
-					$display("corrupted at %d", counter);
+				ctx <= 0;
+				data <= 0;
+				//$display("%x %x", out_ctx[31:0], expect_ctx_0[31:0]);
+				//assert(out_ctx==expect_ctx_0);
 			end
+		else if((counter&32'h7f)==23)
+			begin	
+				ctx <= 160'h3141592689134205834965352a06585346c45230;
+				data <=	160'h9305823cdcdbfac3ed5342790158340985634986;
+			end
+		//if(counter>250 && counter<400)
+/*		
 		if(counter==200)
+			begin	
+				ctx <= 160'h3141592689134205834965352a06585346c45230;
+				data <=	160'h9305823cdcdbfac3ed5342790158340985634986;
+			end
+*/	
+		if(counter>=90 && counter<1000)
+			begin
+				if(!((out_ctx==expect_ctx_0)||(out_ctx==expect_ctx_1)||(out_ctx==expect_ctx_2)))
+					$display("corrupted at %d", counter);
+				if(counter==100 || counter==200 || counter==300)
+					begin
+					//$display("%d %x %x", counter, sha.xbuf2[counter[5:0]][31:0], out_ctx[31:0]);
+					if(out_ctx==expect_ctx_0)
+						$display("ctx_0 at %d: %x", counter, out_ctx);
+					else if(out_ctx==expect_ctx_1)
+						$display("ctx_1 at %d", counter);
+					else if(out_ctx==expect_ctx_2)
+						$display("ctx_2 at %d", counter);
+					else
+						$display("corrupted at %d: %x", counter, out_ctx);						
+					end
+			end
+			/*
+		if(counter==400)
 			begin
 				$display("%x %x", out_ctx[31:0], expect_ctx_1[31:0]);
 				assert(out_ctx==expect_ctx_1);
 			end
+*/
 	end
 end
 endmodule
